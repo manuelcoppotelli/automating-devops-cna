@@ -1,0 +1,73 @@
+repositories:
+- name: ingress-nginx
+  url: https://kubernetes.github.io/ingress-nginx
+- name: minio
+  url: https://operator.min.io/
+- name: bitnami
+  url: https://charts.bitnami.com/bitnami
+- name: gitlab
+  url: https://charts.gitlab.io/
+- name: cdf
+  url: https://cdfoundation.github.io/tekton-helm-chart/
+
+# Default values to set for args along with dedicated keys that can be set by contributors, cli args take precedence over these.
+# In other words, unset values results in no flags passed to helm.
+# See the helm usage (helm SUBCOMMAND -h) for more info on default values when those flags aren't provided.
+helmDefaults:
+  cleanupOnFail: false               #dedicated default key for helm flag --cleanup-on-fail
+  # verify the chart before upgrading (only works with packaged charts not directories) (default false)
+  verify: false
+  # wait for k8s resources via --wait. (default false)
+  wait: true
+  # if set and --wait enabled, will wait until all Jobs have been completed before marking the release as successful. It will wait for as long as --timeout (default false, Implemented in Helm3.5)
+  waitForJobs: true
+  # time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks, and waits on pod/pvc/svc/deployment readiness) (default 300)
+  timeout: 600
+  # forces resource update through delete/recreate if needed (default false)
+  force: false
+  # limit the maximum number of revisions saved per release. Use 0 for no limit. (default 10)
+  historyMax: 10
+  # when using helm 3.2+, automatically create release namespaces if they do not exist (default true)
+  createNamespace: true
+
+commonLabels:
+  part-of: cicd
+
+releases:
+  - name: ingress-nginx
+    namespace: ingress-nginx
+    chart: ingress-nginx/ingress-nginx
+    version: 3.35.0
+    values:
+    - values/ingress-nginx.yaml
+  - name: minio-operator
+    namespace: minio-operator
+    chart: minio/minio-operator
+    version: 4.1.7
+    values:
+    - values/minio-operator.yaml
+    disableValidationOnInstall: true
+  - name: redis
+    namespace: redis
+    chart: bitnami/redis
+    version: 14.8.7
+    values:
+    - values/redis.yaml
+  - name: postgresql
+    namespace: postgresql
+    chart: bitnami/postgresql
+    version: 10.8.0
+    values:
+    - values/postgresql.yaml
+  - name: gitlab
+    namespace: gitlab
+    chart: gitlab/gitlab
+    version: 5.1.1
+    values:
+    - values/gitlab.yaml
+  - name: harbor
+    namespace: harbor
+    chart: harbor/harbor
+    version: 1.7.1
+    values:
+    - values/harbor.yaml

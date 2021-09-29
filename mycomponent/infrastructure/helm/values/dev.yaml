@@ -1,0 +1,12 @@
+env: dev
+
+ingress:
+  host: dev.cicd.linoproject.lab
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 70
+
+imagePullSecrets:
+- name: harbor

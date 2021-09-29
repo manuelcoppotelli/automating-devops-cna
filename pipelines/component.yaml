@@ -1,0 +1,245 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: component
+  namespace: cicd
+spec:
+  workspaces:
+  - name: workdir
+  - name: git-tmp
+  - name: git-basic-auth
+  - name: docker-basic-auth
+  - name: helm-basic-auth
+  - name: tool-api-creds
+  params:
+  - name: repo
+    type: string
+  - name: git
+    type: string
+  - name: registry
+    type: string
+  - name: charts
+    type: string
+  - name: gitref
+    type: string
+  - name: version
+    type: string
+    description: Tag for the built image
+  - name: promote
+    type: string
+    default: "false"
+  tasks:
+
+  - name: clone
+    taskRef:
+      name: git-cli
+    workspaces:
+    - name: input
+      workspace: git-tmp
+    - name: source
+      workspace: workdir
+    - name: basic-auth
+      workspace: git-basic-auth
+    params:
+    - name: USER_HOME
+      value: /root
+    - name: GIT_USER_EMAIL
+      value: tekton@linoproject.lab
+    - name: GIT_USER_NAME
+      value: tekton
+    - name: GIT_SCRIPT
+      value: |
+        git init
+        git config --global http.sslVerify "false"
+        git remote add origin $(params.repo)
+        git pull origin $(params.gitref)
+
+  - name: setup
+    taskRef:
+      name: setup
+    runAfter:
+    - clone
+    params:
+    - name: repo
+      value: $(params.repo)
+    workspaces:
+    - name: workdir
+      workspace: workdir
+
+  - name: build
+    when:
+    - input: $(tasks.setup.results.runtime)
+      operator: in
+      values: ["go", "golang"]
+    taskRef:
+      name: build-golang
+    runAfter:
+    - setup
+    workspaces:
+    - name: workdir
+      workspace: workdir
+
+  - name: package-container
+    runAfter:
+    - build
+    params:
+    - name: team
+      value: $(tasks.setup.results.team)
+    - name: project
+      value: $(tasks.setup.results.project)
+    - name: component
+      value: $(tasks.setup.results.component)
+    - name: environment
+      value: dev
+    - name: version
+      value: $(params.version)
+    - name: registry
+      value: $(params.registry)
+    workspaces:
+    - name: workdir
+      workspace: workdir
+    - name: basic-auth
+      workspace: docker-basic-auth
+    taskRef:
+      name: package-container
+
+  - name: package-helm
+    runAfter:
+    - package-container
+    params:
+    - name: team
+      value: $(tasks.setup.results.team)
+    - name: project
+      value: $(tasks.setup.results.project)
+    - name: component
+      value: $(tasks.setup.results.component)
+    - name: environment
+      value: dev
+    - name: version
+      value: $(params.version)
+    - name: charts
+      value: $(params.charts)
+    workspaces:
+    - name: workdir
+      workspace: workdir
+    - name: basic-auth
+      workspace: helm-basic-auth
+    taskRef:
+      name: package-helm
+
+  - name: manifests-dev
+    runAfter:
+    - package-helm
+    workspaces:
+    - name: workdir
+      workspace: workdir
+    params:
+    - name: team
+      value: $(tasks.setup.results.team)
+    - name: project
+      value: $(tasks.setup.results.project)
+    - name: component
+      value: $(tasks.setup.results.component)
+    - name: environment
+      value: dev
+    - name: version
+      value: $(params.version)
+    taskRef:
+      name: manifests
+
+  - name: gitops-dev
+    runAfter:
+    - manifests-dev
+    retries: 3
+    taskRef:
+      name: gitops-push
+    workspaces:
+    - name: input
+      workspace: workdir
+    - name: source
+      workspace: git-tmp
+    - name: basic-auth
+      workspace: git-basic-auth
+    params:
+    - name: USER_HOME
+      value: /root
+    - name: GIT_USER_EMAIL
+      value: tekton@linoproject.lab
+    - name: GIT_USER_NAME
+      value: tekton
+    - name: ENVIRONMENT
+      value: dev
+    - name: COMPONENT
+      value: $(tasks.setup.results.component)
+    - name: VERSION
+      value: $(params.version)
+    - name: GIT_URL
+      value: $(params.git)
+    - name: TEAM
+      value: $(tasks.setup.results.team)
+    - name: PROJECT
+      value: $(tasks.setup.results.project)
+
+  - name: manifests-prod
+    runAfter:
+    - package-helm
+    when:
+    - input: $(params.promote)
+      operator: in
+      values: ["yes", "true"]
+    workspaces:
+    - name: workdir
+      workspace: workdir
+    params:
+    - name: team
+      value: $(tasks.setup.results.team)
+    - name: project
+      value: $(tasks.setup.results.project)
+    - name: component
+      value: $(tasks.setup.results.component)
+    - name: environment
+      value: prod
+    - name: version
+      value: $(params.version)
+    taskRef:
+      name: manifests
+
+  - name: gitops-prod
+    runAfter:
+    - manifests-prod
+    - gitops-dev
+    retries: 3
+    taskRef:
+      name: gitops-merge
+    when:
+    - input: $(params.promote)
+      operator: in
+      values: ["yes", "true"]
+    workspaces:
+    - name: input
+      workspace: workdir
+    - name: source
+      workspace: git-tmp
+    - name: basic-auth
+      workspace: git-basic-auth
+    - name: api-creds
+      workspace: tool-api-creds
+    params:
+    - name: USER_HOME
+      value: /root
+    - name: GIT_USER_EMAIL
+      value: tekton@linoproject.lab
+    - name: GIT_USER_NAME
+      value: tekton
+    - name: ENVIRONMENT
+      value: prod
+    - name: COMPONENT
+      value: $(tasks.setup.results.component)
+    - name: VERSION
+      value: $(params.version)
+    - name: GIT_URL
+      value: $(params.git)
+    - name: TEAM
+      value: $(tasks.setup.results.team)
+    - name: PROJECT
+      value: $(tasks.setup.results.project)

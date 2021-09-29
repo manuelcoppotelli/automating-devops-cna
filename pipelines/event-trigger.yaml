@@ -1,0 +1,235 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: gitlab-listener-interceptor
+  namespace: cicd
+spec:
+  serviceAccountName: tekton-triggers-event
+  triggers:
+  - triggerRef: gitlab-push
+  - triggerRef: gitlab-tag
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: Trigger
+metadata:
+  name: gitlab-tag
+  namespace: cicd
+spec:
+  bindings:
+  - ref: gitlab-tag-binding
+    kind: TriggerBinding
+  interceptors:
+  - name: validate GitLab payload and filter on eventType
+    ref:
+      name: gitlab
+      kind: ClusterInterceptor
+    params:
+    - name: secretRef
+      value:
+        secretName: gitlab-webhook-token
+        secretKey: token
+    - name: eventTypes
+      value:
+      - Tag Push Hook
+  - name: Computed fields
+    ref:
+      name: cel
+      kind: ClusterInterceptor
+    params:
+    - name: overlays
+      value:
+      - key: truncated_sha
+        expression: "body.checkout_sha.truncate(7)"
+      - key: version
+        expression: "body.ref.split('/')[2]"
+      - key: team
+        expression: body.repository.git_http_url.split('/')[3]
+      - key: project
+        expression: body.repository.git_http_url.split('/')[4]
+      - key: component
+        expression: body.repository.git_http_url.split('/')[5].split('.')[0]
+  template:
+    ref: component-triggertemplate
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: Trigger
+metadata:
+  name: gitlab-push
+  namespace: cicd
+spec:
+  bindings:
+  - ref: gitlab-push-binding
+    kind: TriggerBinding
+  interceptors:
+  - name: Validate GitLab payload and filter on eventType
+    ref:
+      name: gitlab
+      kind: ClusterInterceptor
+    params:
+    - name: secretRef
+      value:
+        secretName: gitlab-webhook-token
+        secretKey: token
+    - name: eventTypes
+      value:
+      - Push Hook
+  - name: Exclude main/master branch
+    ref:
+      name: cel
+      kind: ClusterInterceptor
+    params:
+    - name: filter
+      value: "! (body.ref in ['refs/heads/main', 'refs/heads/master'])"
+  - name: Computed fields
+    ref:
+      name: cel
+      kind: ClusterInterceptor
+    params:
+    - name: overlays
+      value:
+      - key: truncated_sha
+        expression: "body.checkout_sha.truncate(7)"
+      - key: team
+        expression: body.repository.git_http_url.split('/')[3]
+      - key: project
+        expression: body.repository.git_http_url.split('/')[4]
+      - key: component
+        expression: body.repository.git_http_url.split('/')[5].split('.')[0]
+  template:
+    ref: component-triggertemplate
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: gitlab-push-binding
+  namespace: cicd
+spec:
+  params:
+  - name: team
+    value: $(extensions.team)
+  - name: project
+    value: $(extensions.project)
+  - name: component
+    value: $(extensions.component)
+  - name: gitref
+    value: $(body.ref)
+  - name: gitrepositoryurl
+    value: $(body.repository.git_http_url)
+  - name: version
+    value: 0.0.0-$(extensions.truncated_sha)
+  - name: promote
+    value: "false"
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: gitlab-tag-binding
+  namespace: cicd
+spec:
+  params:
+  - name: team
+    value: $(extensions.team)
+  - name: project
+    value: $(extensions.project)
+  - name: component
+    value: $(extensions.component)
+  - name: gitref
+    value: $(body.ref)
+  - name: gitrepositoryurl
+    value: $(body.repository.git_http_url)
+  - name: version
+    value: $(extensions.version)
+  - name: promote
+    value: "true"
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: component-triggertemplate
+  namespace: cicd
+spec:
+  params:
+  - name: team
+  - name: project
+  - name: component
+  - name: gitref
+    description: The git git reference
+  - name: gitrepositoryurl
+    description: The git repository url
+  - name: version
+    description: The version
+  - name: promote
+    description: Whether to promote the release
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      labels:
+        tekton.dev/pipeline: component
+      name: $(tt.params.team)-$(tt.params.project)-$(tt.params.component)-$(tt.params.version)
+      namespace: cicd
+    spec:
+      pipelineRef:
+        name: component
+      podTemplate:
+        securityContext:
+          fsGroup: 1001
+      timeout: 1h0m0s
+      params:
+      - name: repo
+        value: $(tt.params.gitrepositoryurl)
+      - name: git
+        value: gitlab.linoproject.lab
+      - name: registry
+        value: harbor.linoproject.lab
+      - name: charts
+        value: harbor.linoproject.lab/chartrepo
+      - name: gitref
+        value: $(tt.params.gitref)
+      - name: version
+        value: $(tt.params.version)
+      - name: promote
+        value: $(tt.params.promote)
+      workspaces:
+      - name: tool-api-creds
+        secret:
+          secretName: gitlab-api-creds
+      - name: git-basic-auth
+        secret:
+          secretName: gitlab-basic-auth
+      - name: docker-basic-auth
+        secret:
+          secretName: harbor-docker-basic-auth
+      - name: helm-basic-auth
+        secret:
+          secretName: harbor-helm-basic-auth
+      - name: git-tmp
+        emptyDir: {}
+      - name: workdir
+        volumeClaimTemplate:
+          metadata:
+            creationTimestamp: null
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tekton
+  namespace: cicd
+spec:
+  rules:
+  - host: webhook.cicd.linoproject.lab
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: el-gitlab-listener-interceptor
+            port:
+              number: 8080

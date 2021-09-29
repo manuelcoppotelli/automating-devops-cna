@@ -1,0 +1,37 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: package-helm
+  namespace: cicd
+spec:
+  workspaces:
+  - name: workdir
+  - name: basic-auth
+    optional: true
+  params:
+  - name: team
+    type: string
+  - name: project
+    type: string
+  - name: component
+    type: string
+  - name: environment
+    type: string
+  - name: version
+    type: string
+  - name: charts
+    type: string
+  steps:
+  - name: save-and-push
+    image: alpine/k8s:1.18.16
+    workingdir: $(workspaces.workdir.path)
+    env:
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
+    script: |
+      USER=$(cat ${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/username)
+      PASS=$(cat ${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/password)
+
+      helm repo add harbor "https://$(params.charts)/$(params.team)-$(params.project)" --username=$USER --password=$PASS --insecure-skip-tls-verify
+
+      helm push ./infrastructure/helm/ harbor --version=$(params.version) --insecure

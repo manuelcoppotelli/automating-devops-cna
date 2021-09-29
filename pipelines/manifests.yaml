@@ -1,0 +1,60 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: manifests
+  namespace: cicd
+spec:
+  workspaces:
+  - name: workdir
+  params:
+  - name: team
+    type: string
+  - name: project
+    type: string
+  - name: component
+    type: string
+  - name: environment
+    type: string
+  - name: version
+    type: string
+  steps:
+  - name: release-to-env
+    image: mikefarah/yq:4.11.2
+    workingdir: $(workspaces.workdir.path)
+    script: |
+      mkdir -p $(workspaces.workdir.path)/tmp/$(params.environment)
+
+      cat <<-EOF > $(workspaces.workdir.path)/tmp/$(params.environment)/$(params.component).yaml
+      apiVersion: helm.toolkit.fluxcd.io/v2beta1
+      kind: HelmRelease
+      metadata:
+        labels:
+          team: $(params.team)
+          project: $(params.project)
+          component: $(params.component)
+          environment: $(params.environment)
+        name: $(params.team)-$(params.project)-$(params.environment)-$(params.component)
+        namespace: $(params.team)-$(params.project)-$(params.environment)
+      spec:
+        interval: 1m0s
+        releaseName: $(params.team)-$(params.project)-$(params.environment)-$(params.component)
+        targetNamespace: $(params.team)-$(params.project)-$(params.environment)
+        chart:
+          spec:
+            chart: $(params.component)
+            version: $(params.version)
+            sourceRef:
+              kind: HelmRepository
+              name: harbor-$(params.team)-$(params.project)
+              namespace: flux-system
+        rollback:
+          timeout: 5m
+          disableWait: false
+          disableHooks: false
+          recreate: false
+          force: false
+          cleanupOnFail: false
+        values: {}
+      EOF
+
+      yq --inplace --prettyPrint eval-all 'select(fileIndex == 0) * {"spec":{"values": select(fileIndex == 1) }} | ... comments=""' $(workspaces.workdir.path)/tmp/$(params.environment)/$(params.component).yaml $(workspaces.workdir.path)/infrastructure/helm/values/$(params.environment).yaml

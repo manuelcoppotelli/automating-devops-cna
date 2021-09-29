@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta1
+kind: HelmRepository
+metadata:
+  name: harbor-myteam-myapp
+  namespace: flux-system
+spec:
+  url: https://harbor.linoproject.lab/chartrepo/myteam-myapp
+  interval: 1m
+  secretRef:
+    name: harbor-credentials

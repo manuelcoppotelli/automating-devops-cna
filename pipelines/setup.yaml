@@ -1,0 +1,34 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: setup
+  namespace: cicd
+spec:
+  params:
+  - name: repo
+    type: string
+  workspaces:
+  - name: workdir
+  results:
+  - name: runtime
+    description: The runtime used to build
+  - name: team
+    description: The team name
+  - name: project
+    description: The project name
+  - name: component
+    description: The component name
+  steps:
+  - name: details
+    image: alpine
+    script: |
+      echo -n $(params.repo) | rev | cut -d '/' -f 1 | rev | cut -d '.' -f 1 | tr -d '\n' > $(results.component.path)
+
+      echo -n $(params.repo) | rev | cut -d '/' -f 2 | rev | tr -d '\n' > $(results.project.path)
+
+      echo -n $(params.repo) | rev | cut -d '/' -f 3 | rev | tr -d '\n' > $(results.team.path)
+  - name: automation-conf
+    image: mikefarah/yq:4.11.2
+    workingdir: $(workspaces.workdir.path)
+    script: |
+      yq eval '.runtime' automation.yaml | tr -d '\n' > $(results.runtime.path)

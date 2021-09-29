@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: package-container
+  namespace: cicd
+spec:
+  workspaces:
+  - name: workdir
+  - name: basic-auth
+    optional: true
+  params:
+  - name: team
+    type: string
+  - name: project
+    type: string
+  - name: component
+    type: string
+  - name: environment
+    type: string
+  - name: version
+    type: string
+  - name: registry
+    type: string
+  - name: pathToDockerFile
+    type: string
+    description: The path to the dockerfile to build
+    default: Dockerfile
+  - name: pathToContext
+    type: string
+    description: |
+      The build context used by Kaniko
+      (https://github.com/GoogleContainerTools/kaniko#kaniko-build-contexts)
+    default: $(workspaces.workdir.path)/infrastructure/docker
+  steps:
+  - name: build-and-push
+    image: gcr.io/kaniko-project/executor
+    workingdir: $(workspaces.workdir.path)
+    env:
+    # allow kaniko to detect docker credential
+    - name: DOCKER_CONFIG
+      value: $(workspaces.basic-auth.path)
+    command:
+    - /kaniko/executor
+    args:
+    - --verbosity=info
+    - --cleanup
+    - --skip-tls-verify
+    - --dockerfile=$(params.pathToDockerFile)
+    - --destination=$(params.registry)/$(params.team)-$(params.project)/$(params.component):$(params.version)
+    - --context=$(inputs.params.pathToContext)
