@@ -13,7 +13,7 @@ The recording of the presentation is available on the [VMworld On-Demand Video L
 
 ## Press Release
 
-- [VMworld 2021 as speaker - manuelcoppotelli.me](https://manuelcoppotelli.me/blog/vmworld-2021-as-speaker)
+- [VMworld 2021 as speaker @ manuelcoppotelli.me](https://manuelcoppotelli.me/blog/vmworld-2021-as-speaker)
 
 
 ## Setup
