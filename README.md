@@ -11,6 +11,10 @@ Lino Telera [@linotelera](https://twitter.com/linotelera)
 
 The recording of the presentation is available on the [VMworld On-Demand Video Library](https://www.vmware.com/vmworld/en/video-library/video-landing.html?sessionid=1620811753703001Iuro).
 
+## Press Release
+
+- [VMworld 2021 as speaker - manuelcoppotelli.me](https://manuelcoppotelli.me/blog/vmworld-2021-as-speaker)
+
 
 ## Setup
 
