@@ -7,6 +7,10 @@ Manuel Coppotelli [@manuel_coppo](https://twitter.com/manuel_coppo)
 
 Lino Telera [@linotelera](https://twitter.com/linotelera)
 
+## Presentation recording
+
+The recording of the presentation is available on the [VMworld On-Demand Video Library](https://www.vmware.com/vmworld/en/video-library/video-landing.html?sessionid=1620811753703001Iuro).
+
 
 ## Setup
 
